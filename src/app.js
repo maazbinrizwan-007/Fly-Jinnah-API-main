@@ -1,20 +1,16 @@
-require('dotenv').config();
 const express = require('express');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const mongoose = require('mongoose');
 
-const apiKeyAuth = require('./middleware/apiKeyAuth');
+const jwtAuth = require('./middleware/apiKeyAuth');
+const authRoutes = require('./routes/auth');
 const flightRoutes = require('./routes/flights');
 
-const { PORT = 5000, MONGO_URI, FLYJINNAH_API_KEY } = process.env;
-
-if (!MONGO_URI || !FLYJINNAH_API_KEY) {
-  console.error('MONGO_URI and FLYJINNAH_API_KEY must be set in .env');
-  process.exit(1);
-}
-
 const app = express();
+
+// Behind Vercel's proxy: needed so rate limiting sees the real client IP.
+app.set('trust proxy', 1);
 
 app.use(helmet());
 app.use(express.json({ limit: '10mb' }));
@@ -28,11 +24,34 @@ app.use(
   })
 );
 
+// Serverless-friendly: connect on first request and reuse the connection across warm invocations.
+let connecting;
+function connectDb() {
+  if (mongoose.connection.readyState === 1) return Promise.resolve();
+  if (!connecting) {
+    connecting = mongoose.connect(process.env.MONGO_URI).catch((err) => {
+      connecting = null;
+      throw err;
+    });
+  }
+  return connecting;
+}
+
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', db: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected' });
 });
 
-app.use('/api/v1/flyjinnah', apiKeyAuth, flightRoutes);
+app.use(async (req, res, next) => {
+  try {
+    await connectDb();
+    next();
+  } catch (err) {
+    next(err);
+  }
+});
+
+app.use('/api/v1/auth', authRoutes);
+app.use('/api/v1/flyjinnah', jwtAuth, flightRoutes);
 
 app.use((req, res) => {
   res.status(404).json({ success: false, message: 'Not found' });
@@ -50,14 +69,4 @@ app.use((err, req, res, next) => {
   res.status(500).json({ success: false, message: 'Internal server error' });
 });
 
-mongoose
-  .connect(MONGO_URI)
-  .then(() => {
-    console.log('MongoDB connected');
-    app.listen(PORT, () => console.log(`Fly Jinnah API listening on http://localhost:${PORT}`));
-  })
-  .catch((err) => {
-    console.error('MongoDB connection failed:', err.message);
-    process.exit(1);
-  });
-
+module.exports = app;
