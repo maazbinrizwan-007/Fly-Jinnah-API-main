@@ -65,4 +65,50 @@ async function receiveFlights(req, res, next) {
   }
 }
 
-module.exports = { receiveFlights };
+// GET /api/v1/flyjinnah/dump_flyjinnah_data
+// Returns every stored flight, oldest flight date first.
+async function dumpFlights(req, res, next) {
+  try {
+    const flights = await FlyJinnahFlight.find().sort({ FlightDate: 1, FlightTime: 1 }).lean();
+    res.json({ success: true, count: flights.length, data: flights });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// DELETE /api/v1/flyjinnah/delete_flyjinnah_data?date=2026-11-06T12:15:00Z   (or JSON body { "date": "..." })
+// Deletes every record whose createdTime (when it was first received) is on or before the given date-time.
+// A date-only value ("YYYY-MM-DD") covers that whole day (UTC), so records created on that day are deleted too.
+// Accepts "YYYY-MM-DD" or "YYYY-MM-DDTHH:mm[:ss[.sss]]" with an optional Z / +05:00 offset; without an offset it is UTC.
+async function deleteFlights(req, res, next) {
+  try {
+    const raw = req.query.date || (req.body && req.body.date);
+    const m =
+      typeof raw === 'string' &&
+      /^(\d{4}-\d{2}-\d{2})(?:[T ](\d{2}:\d{2}(?::\d{2}(?:\.\d{1,3})?)?)(Z|[+-]\d{2}:\d{2})?)?$/i.exec(raw.trim());
+    if (!m) {
+      return res
+        .status(400)
+        .json({ success: false, message: 'date is required as YYYY-MM-DD or YYYY-MM-DDTHH:mm:ss[Z|+hh:mm]' });
+    }
+    const [, day, time = '00:00:00', offset = 'Z'] = m;
+    const before = new Date(`${day}T${time.length === 5 ? `${time}:00` : time}${offset.toUpperCase()}`);
+    if (Number.isNaN(before.getTime()) || (!m[2] && before.toISOString().slice(0, 10) !== day)) {
+      return res.status(400).json({ success: false, message: 'date is not a valid calendar date/time' });
+    }
+
+    // Date only -> up to the end of that day; with a time -> up to and including that exact moment.
+    const through = m[2] ? before : new Date(before.getTime() + 24 * 60 * 60 * 1000 - 1);
+
+    const { deletedCount } = await FlyJinnahFlight.deleteMany({ createdTime: { $lte: through } });
+    res.json({
+      success: true,
+      message: `Deleted records created up to ${through.toISOString()}`,
+      deleted: deletedCount,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+module.exports = { receiveFlights, dumpFlights, deleteFlights };
