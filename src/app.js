@@ -6,6 +6,8 @@ const mongoose = require('mongoose');
 const jwtAuth = require('./middleware/apiKeyAuth');
 const authRoutes = require('./routes/auth');
 const flightRoutes = require('./routes/flights');
+const southAirlineRoutes = require('./routes/southAirlineFlights');
+const allAirlinesRoutes = require('./routes/allAirlines');
 
 const app = express();
 
@@ -52,6 +54,8 @@ app.use(async (req, res, next) => {
 
 app.use('/api/v1/auth', authRoutes);
 app.use('/api/v1/flyjinnah', jwtAuth, flightRoutes);
+app.use('/api/v1/southairline', jwtAuth, southAirlineRoutes);
+app.use('/api/v1/airlines', jwtAuth, allAirlinesRoutes);
 
 app.use((req, res) => {
   res.status(404).json({ success: false, message: 'Not found' });

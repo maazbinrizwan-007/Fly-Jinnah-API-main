@@ -25,7 +25,7 @@ const PASSENGER_FIELDS = [
 ];
 
 // Returns { flight } on success or { errors: [...] } if the record is unusable.
-function normalizeFlight(input, index) {
+function normalizeFlight(input, index, defaultAirline = 'Fly Jinnah') {
   const errors = [];
   const at = `records[${index}]`;
 
@@ -34,7 +34,7 @@ function normalizeFlight(input, index) {
   }
 
   const flight = {
-    AirlineName: str(input.AirlineName) || 'Fly Jinnah',
+    AirlineName: str(input.AirlineName) || defaultAirline,
     FlightNo: str(input.FlightNo),
     BoardingCity: str(input.BoardingCity),
     DestinationCity: str(input.DestinationCity),
